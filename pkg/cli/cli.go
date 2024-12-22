@@ -66,3 +66,9 @@ func exitOnConflictingFlags(flags ...string) {
 	fmt.Println(msg)
 	os.Exit(1)
 }
+
+func exitFromErr(err error) {
+	msg := fmt.Sprintf("error: %s", err.Error())
+	fmt.Println(msg)
+	os.Exit(1)
+}
