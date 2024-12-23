@@ -1,9 +1,13 @@
 package cli
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
+	"sync"
 
+	jira "github.com/ctreminiom/go-atlassian/jira/v3"
 	"gopkg.in/yaml.v3"
 )
 
@@ -31,8 +35,56 @@ func SyncCmdAction(args Cmd) {
 		exitFromErr(err)
 	}
 
-	// TODO: sync here
-	fmt.Println(config)
+	var wg sync.WaitGroup
+	for i := 0; i < len(config.Projects); i++ {
+		// Increment the wait group counter
+		wg.Add(1)
+		go func() {
+			// Decrement the counter when the go routine completes
+			defer wg.Done()
+			syncProject(args, config, i)
+		}()
+	}
+	wg.Wait()
+}
+
+func syncProject(args Cmd, config Config, projPos int) {
+	if args.JiraEmail == nil {
+		err := errors.New(`please set the "JIRA_EMAIL" env variable`)
+		exitFromErr(err)
+	}
+
+	if args.JiraToken == nil {
+		err := errors.New(`please set the "JIRA_TOKEN" env variable`)
+		exitFromErr(err)
+	}
+
+	project := config.Projects[projPos]
+
+	url := fmt.Sprintf("https://%s.atlassian.net", project.Jira.Subdomain)
+	jc, err := jira.New(nil, url)
+	jc.Auth.SetBasicAuth(*args.JiraEmail, *args.JiraToken)
+	if err != nil {
+		exitFromErr(err)
+	}
+
+	// map to translate github users to jira account ids
+	assigneesMap := map[string]string{}
+
+	for i := 0; i < len(project.Assignees); i++ {
+		email := project.Assignees[i].JiraEmail
+		users, _, err := jc.User.Search.Do(context.Background(), "", email, 0, 2)
+
+		if err != nil {
+			exitFromErr(err)
+		}
+
+		if len(users) != 1 {
+			continue
+		}
+
+		assigneesMap[project.Assignees[i].GHUser] = users[0].AccountID
+	}
 }
 
 type SyncCmd struct {
