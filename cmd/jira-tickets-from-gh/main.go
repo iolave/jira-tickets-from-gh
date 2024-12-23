@@ -6,7 +6,7 @@ import (
 	"os"
 
 	arg "github.com/alexflint/go-arg"
-	"github.com/iolave/jira-tickets-from-gh/pkg/cli"
+	"github.com/iolave/jira-tickets-from-gh/internal/cli"
 )
 
 func main() {

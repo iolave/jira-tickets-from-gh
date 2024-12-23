@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	VERSION = "v0.5.0-beta.1"
+	VERSION = "v0.4.0-beta.4"
 	NAME    = "jira-tickets-from-gh"
 )
 
