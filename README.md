@@ -27,8 +27,8 @@ To get a jira api token from your jira cloud account please refer to the [docs](
 
 ### Environment variables
 - `GITHUB_TOKEN`: Your GitHub token. If the project you're trying to sync is in an organization, make sure the token have access to it.
-- `JIRA_TOKEN`: Jira api token used for auth.
-- `JIRA_EMAIL`: Jira email used for auth.
+- `JIRA_TOKEN`: Jira api token used for auth (use `JIRA_TOKEN_{{CONFIG_PROJECT_NAME}}` for project specific credentials).
+- `JIRA_EMAIL`: Jira email used for auth (use `JIRA_EMAIL_{{CONFIG_PROJECT_NAME}}` for project specific credentials).
 
 ### Get the id of your github project
 The cli is shipped with a utility that's going to help you to search a GitHub project id.
@@ -58,7 +58,7 @@ Use `jira-tickets-from-gh sync` command to sync a GitHub project with a Jira clo
 |---------------------------------------------|:--------:|-------------|
 | `sleepTime`                                 |`false`	 | sleep time between executions (if not specified the program will run once) |
 | `enableApi`                                 |`false`	 | serves an api to interact with the projects storage and manage tasks manually (like moving a task to done) |
-| `sync[].name`                               |`true`	 | tag to identify a sync project |
+| `sync[].name`                               |`true`	 | tag to identify a sync project (characters allowed are `[a-zA-Z0-9_]`) |
 | `sync[].assignees[]`                        |`false`	 | map of GitHub users to Jira ones (email)  |
 | `sync[].assignees[].jiraEmail`	      |`true`	 | Jira email |
 | `sync[].assignees[].ghUer`    	      |`true`	 | GitHub user |

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
 	"sync"
 
 	jira "github.com/ctreminiom/go-atlassian/jira/v3"
@@ -63,16 +64,21 @@ func syncProject(args Cmd, config Config, projPos int) {
 
 	url := fmt.Sprintf("https://%s.atlassian.net", project.Jira.Subdomain)
 	jc, err := jira.New(nil, url)
-	jc.Auth.SetBasicAuth(*args.JiraEmail, *args.JiraToken)
 	if err != nil {
 		exitFromErr(err)
 	}
+	token, email, err := getProjectJiraCreds(args, project.Name)
+	if err != nil {
+		exitFromErr(err)
+	}
+	jc.Auth.SetBasicAuth(email, token)
 
 	// map to translate github users to jira account ids
 	assigneesMap := map[string]string{}
 
 	for i := 0; i < len(project.Assignees); i++ {
 		email := project.Assignees[i].JiraEmail
+		// FIXME: response returns a 404 when credentials are invalid, fix this
 		users, _, err := jc.User.Search.Do(context.Background(), "", email, 0, 2)
 
 		if err != nil {
@@ -124,6 +130,13 @@ func (c Config) validate() error {
 			return fmt.Errorf(`"sync[%d].name" property is missing`, i)
 		}
 
+		validNamePattern := "^([a-zA-Z0-9_])*$"
+		validName, _ := regexp.MatchString(validNamePattern, proj.Name)
+
+		if !validName {
+			return fmt.Errorf(`"sync[%d].name" property should match the expression "%s"`, i, validNamePattern)
+		}
+
 		for j := 0; j < len(proj.Assignees); j++ {
 			assignee := proj.Assignees[j]
 
@@ -157,4 +170,28 @@ func (c Config) validate() error {
 	}
 
 	return nil
+}
+
+func getProjectJiraCreds(args Cmd, projectName string) (token string, email string, err error) {
+	envEmail := fmt.Sprintf("JIRA_EMAIL_%s", projectName)
+	envToken := fmt.Sprintf("JIRA_TOKEN_%s", projectName)
+
+	email = os.Getenv(envEmail)
+	token = os.Getenv(envToken)
+
+	if email != "" && token != "" {
+		return token, email, nil
+	}
+
+	if args.JiraEmail == nil {
+		err := errors.New(`please set the "JIRA_EMAIL" env variable`)
+		return "", "", err
+	}
+
+	if args.JiraToken == nil {
+		err := errors.New(`please set the "JIRA_TOKEN" env variable`)
+		return "", "", err
+	}
+
+	return *args.JiraToken, *args.JiraEmail, nil
 }
