@@ -126,11 +126,12 @@ type Config struct {
 func (c Config) validate() error {
 	for i := 0; i < len(c.Projects); i++ {
 		proj := c.Projects[i]
+
 		if proj.Name == "" {
 			return fmt.Errorf(`"sync[%d].name" property is missing`, i)
 		}
 
-		validNamePattern := "^([a-zA-Z0-9_])*$"
+		validNamePattern := "^[a-zA-Z0-9_]*$"
 		validName, _ := regexp.MatchString(validNamePattern, proj.Name)
 
 		if !validName {
@@ -152,6 +153,19 @@ func (c Config) validate() error {
 		if proj.Github.ProjectID == "" {
 			return fmt.Errorf(`"sync[%d].github.projectId" property is missing`, i)
 		}
+
+		// checking if project id is duped
+		for j := 0; j < len(c.Projects); j++ {
+			if j == i {
+				continue
+			}
+
+			if proj.Github.ProjectID == c.Projects[j].Github.ProjectID {
+				return fmt.Errorf(`"sync[%d].github.projectId" property is duplicated at "sync[%d].github.projectId"`, i, j)
+			}
+
+		}
+
 		if proj.Jira.Subdomain == "" {
 			return fmt.Errorf(`"sync[%d].jira.subdomain" property is missing`, i)
 		}
