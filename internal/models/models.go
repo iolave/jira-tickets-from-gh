@@ -9,6 +9,7 @@ import (
 type Models struct {
 	db       *sql.DB
 	Projects Projects
+	Issues   Issues
 }
 
 func (m *Models) Close() error {
@@ -22,7 +23,6 @@ func Initialize() (*Models, error) {
 	if err != nil {
 		return nil, err
 	}
-	models.db = db
 
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS projects (
 		id string not null,
@@ -39,6 +39,24 @@ func Initialize() (*Models, error) {
 		return nil, err
 	}
 
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS issues (
+		projectId	string not null,
+		id		string not null,
+		title		string not null,
+		jiraUrl		string,
+		jiraIssueType	string,
+		estimate	int,
+		status		string,
+		assignees	string,
+		repository	string,
+		primary key (projectId, id)
+	)`)
+	if err != nil {
+		return nil, err
+	}
+
+	models.db = db
 	models.Projects = Projects{models: models}
+	models.Issues = Issues{models: models}
 	return models, nil
 }
