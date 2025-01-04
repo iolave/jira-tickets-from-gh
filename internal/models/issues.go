@@ -119,6 +119,122 @@ func (p *Issues) Get(githubProjectId, githubId string) (*Issue, error) {
 	return issue, nil
 }
 
+// Get gets a project issue, if no issue found *Issue will be nil
+func (p *Issues) GetWithoutUrl(githubProjectId string) ([]*Issue, error) {
+	if githubProjectId == "" {
+		return nil, errors.New(`please provide a value for "githubProjectId"`)
+	}
+
+	stmt := fmt.Sprintf(`SELECT
+		projectId,
+		id,
+		jiraUrl,
+		jiraIssueType,
+		title,
+		estimate,
+		status,
+		assignees,
+		repository
+	FROM issues
+	WHERE projectId = "%s"
+	AND jiraUrl IS NULL
+	`, githubProjectId)
+	rows, err := p.models.db.Query(stmt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	issues := []*Issue{}
+	for rows.Next() {
+		fmt.Println("found issue")
+		issue := new(Issue)
+		var assigneesStr *string
+
+		err = rows.Scan(
+			&issue.GitHubProjectID,
+			&issue.GitHubID,
+			&issue.JiraURL,
+			&issue.JiraIssueType,
+			&issue.Title,
+			&issue.Estimate,
+			&issue.Status,
+			&assigneesStr,
+			&issue.Repository,
+		)
+		if err != nil {
+			return nil, err
+		}
+		assignees := []string{}
+		if assigneesStr != nil && *assigneesStr != "" {
+			assignees = strings.Split(*assigneesStr, ";")
+		}
+		issue.Assignees = assignees
+		// uncomment when models is avaialbe within an issue
+		// issue.models = p.models
+		issues = append(issues, issue)
+	}
+
+	return issues, nil
+}
+
+// Get gets a project issue, if no issue found *Issue will be nil
+func (p *Issues) GetWithUrl(githubProjectId string) ([]*Issue, error) {
+	if githubProjectId == "" {
+		return nil, errors.New(`please provide a value for "githubProjectId"`)
+	}
+
+	stmt := fmt.Sprintf(`SELECT
+		projectId,
+		id,
+		jiraUrl,
+		jiraIssueType,
+		title,
+		estimate,
+		status,
+		assignees,
+		repository
+	FROM issues
+	WHERE projectId = "%s"
+	AND jiraUrl IS NOT NULL
+	`, githubProjectId)
+	rows, err := p.models.db.Query(stmt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	issues := []*Issue{}
+	for rows.Next() {
+		fmt.Println("found issue")
+		issue := new(Issue)
+		var assigneesStr *string
+
+		err = rows.Scan(
+			&issue.GitHubProjectID,
+			&issue.GitHubID,
+			&issue.JiraURL,
+			&issue.JiraIssueType,
+			&issue.Title,
+			&issue.Estimate,
+			&issue.Status,
+			&assigneesStr,
+			&issue.Repository,
+		)
+		if err != nil {
+			return nil, err
+		}
+		assignees := []string{}
+		if assigneesStr != nil && *assigneesStr != "" {
+			assignees = strings.Split(*assigneesStr, ";")
+		}
+		issue.Assignees = assignees
+		// uncomment when models is avaialbe within an issue
+		// issue.models = p.models
+		issues = append(issues, issue)
+	}
+
+	return issues, nil
+}
+
 type IssueStatus string
 
 const (

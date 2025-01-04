@@ -27,6 +27,14 @@ func (p Project) GetIssue(id string) (*Issue, error) {
 	return p.models.Issues.Get(p.ID, id)
 }
 
+func (p Project) GetIssuesWithoutUrl() ([]*Issue, error) {
+	return p.models.Issues.GetWithoutUrl(p.ID)
+}
+
+func (p Project) GetIssuesWithUrl() ([]*Issue, error) {
+	return p.models.Issues.GetWithUrl(p.ID)
+}
+
 type Projects struct {
 	models *Models
 }
