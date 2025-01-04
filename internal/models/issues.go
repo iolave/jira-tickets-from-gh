@@ -1,6 +1,10 @@
 package models
 
-import "strings"
+import (
+	"errors"
+	"fmt"
+	"strings"
+)
 
 type Issues struct {
 	models *Models
@@ -55,6 +59,63 @@ func (service *Issues) Upsert(projectId, id, title string, status *IssueStatus, 
 	issue.Estimate = estimate
 	issue.Status = status
 
+	return issue, nil
+}
+
+// Get gets a project issue, if no issue found *Issue will be nil
+func (p *Issues) Get(githubProjectId, githubId string) (*Issue, error) {
+	if githubProjectId == "" {
+		return nil, errors.New(`please provide a value for "githubProjectId"`)
+	}
+	if githubId == "" {
+		return nil, errors.New(`please provide a value for "githubId"`)
+	}
+
+	stmt := fmt.Sprintf(`SELECT
+		projectId,
+		id,
+		jiraUrl,
+		jiraIssueType,
+		title,
+		estimate,
+		status,
+		assignees,
+		repository
+	FROM issues
+	WHERE id = "%s"
+	AND projectId = "%s"
+	`, githubId, githubProjectId)
+	rows, err := p.models.db.Query(stmt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	issue := new(Issue)
+	var assigneesStr *string
+	if !rows.Next() {
+		return nil, nil
+	}
+	err = rows.Scan(
+		&issue.GitHubProjectID,
+		&issue.GitHubID,
+		&issue.JiraURL,
+		&issue.JiraIssueType,
+		&issue.Title,
+		&issue.Estimate,
+		&issue.Status,
+		&assigneesStr,
+		&issue.Repository,
+	)
+	if err != nil {
+		return nil, err
+	}
+	assignees := []string{}
+	if assigneesStr != nil {
+		assignees = strings.Split(*assigneesStr, ";")
+	}
+	issue.Assignees = assignees
+	// uncomment when models is avaialbe within an issue
+	// issue.models = p.models
 	return issue, nil
 }
 

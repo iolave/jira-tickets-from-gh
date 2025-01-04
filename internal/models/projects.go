@@ -23,6 +23,10 @@ func (p Project) UpsertIssue(id, title string, status *IssueStatus, jiraUrl, jir
 	return p.models.Issues.Upsert(p.ID, id, title, status, jiraUrl, jiraIssueType, repo, estimate, assignees)
 }
 
+func (p Project) GetIssue(id string) (*Issue, error) {
+	return p.models.Issues.Get(p.ID, id)
+}
+
 type Projects struct {
 	models *Models
 }
