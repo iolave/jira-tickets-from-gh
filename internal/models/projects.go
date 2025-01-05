@@ -35,6 +35,14 @@ func (p Project) GetIssuesWithUrl() ([]*Issue, error) {
 	return p.models.Issues.GetWithUrl(p.ID)
 }
 
+func (p Project) FindIssuesThatExist(ids []string) ([]string, error) {
+	return p.models.Issues.FindThoseThatExist(p.ID, ids)
+}
+
+func (p Project) FindIssuesThatDoesntExist(ids []string) ([]string, error) {
+	return p.models.Issues.FindThoseThatDoesntExist(p.ID, ids)
+}
+
 type Projects struct {
 	models *Models
 }

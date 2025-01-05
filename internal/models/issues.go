@@ -3,6 +3,7 @@ package models
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -146,7 +147,6 @@ func (p *Issues) GetWithoutUrl(githubProjectId string) ([]*Issue, error) {
 	defer rows.Close()
 	issues := []*Issue{}
 	for rows.Next() {
-		fmt.Println("found issue")
 		issue := new(Issue)
 		var assigneesStr *string
 
@@ -204,7 +204,6 @@ func (p *Issues) GetWithUrl(githubProjectId string) ([]*Issue, error) {
 	defer rows.Close()
 	issues := []*Issue{}
 	for rows.Next() {
-		fmt.Println("found issue")
 		issue := new(Issue)
 		var assigneesStr *string
 
@@ -233,6 +232,69 @@ func (p *Issues) GetWithUrl(githubProjectId string) ([]*Issue, error) {
 	}
 
 	return issues, nil
+}
+
+// FindThoseThatExist takes a list of issues ids and returns those that does exists.
+func (p *Issues) FindThoseThatExist(githubProjectId string, ids []string) ([]string, error) {
+	newIds := slices.Clone(ids)
+	if githubProjectId == "" {
+		return []string{}, errors.New(`please provide a value for "githubProjectId"`)
+	}
+
+	for i := 0; i < len(newIds); i++ {
+		newIds[i] = fmt.Sprintf(`"%s"`, newIds[i])
+	}
+	idsQuery := strings.Join(newIds, ",")
+	// query to select those ids that exist
+	stmt := fmt.Sprintf(`SELECT
+		id
+	FROM issues
+	WHERE projectId = "%s"
+	AND id IN (%s)
+	`, githubProjectId, idsQuery)
+	rows, err := p.models.db.Query(stmt)
+	if err != nil {
+		return []string{}, err
+	}
+	defer rows.Close()
+	idsThatExist := []string{}
+	for rows.Next() {
+		id := ""
+
+		err = rows.Scan(
+			&id,
+		)
+		if err != nil {
+			return []string{}, err
+		}
+		idsThatExist = append(idsThatExist, id)
+	}
+
+	return idsThatExist, nil
+}
+
+// FindThoseThatDoesntExist takes a list of issues ids and returns those that does not exists.
+func (p *Issues) FindThoseThatDoesntExist(githubProjectId string, ids []string) ([]string, error) {
+	idsThatExist, err := p.FindThoseThatExist(githubProjectId, ids)
+	if err != nil {
+		return []string{}, err
+	}
+
+	idsThatDoesntExist := []string{}
+
+	for i := 0; i < len(ids); i++ {
+		found := false
+		for j := 0; j < len(idsThatExist); j++ {
+			if ids[i] == idsThatExist[j] {
+				found = true
+			}
+		}
+		if !found {
+			idsThatDoesntExist = append(idsThatDoesntExist, ids[i])
+		}
+	}
+
+	return idsThatDoesntExist, nil
 }
 
 type IssueStatus string
