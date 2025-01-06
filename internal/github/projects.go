@@ -1,8 +1,11 @@
 package github
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
+
+	"github.com/google/uuid"
 )
 
 type ProjectFieldType int
@@ -212,6 +215,49 @@ func (c *GitHubClient) GetProjectItems(id string, fields []ProjectField) (GetPro
 		return result, res, err
 	}
 	// err = getErrorFromErrors(result.Errors)
+
+	return result, res, err
+
+}
+
+type UpdateProjectItemFieldResult struct {
+	Errors *[]Error `json:"errors"`
+	Data   struct {
+		Update struct {
+			ClientMutId string `json:"clientMutationId"`
+		} `json:"updateProjectV2ItemFieldValue"`
+	} `json:"data"`
+}
+
+func (c *GitHubClient) UpdateProjectItemField(projectId, itemId, fieldId string, fieldType ProjectFieldType, value any) (UpdateProjectItemFieldResult, *http.Response, error) {
+	var result UpdateProjectItemFieldResult
+	var valueQuery = ""
+	switch fieldType {
+	case PROJECT_FIELD_TEXT:
+		valueQuery = fmt.Sprintf(`{ text: "%s"}`, value.(string))
+	case PROJECT_FIELD_NUMBER:
+		valueQuery = fmt.Sprintf(`{ text: %d}`, value.(int))
+	default:
+		return result, nil, errors.New("project field type not supported on update (TODO)")
+	}
+
+	query := fmt.Sprintf(`mutation UpdateProjectV2ItemFieldValue {
+		updateProjectV2ItemFieldValue(input: {
+			fieldId: "%s"
+			itemId: "%s"
+			projectId: "%s"
+			clientMutationId: "%s"
+			value: %s
+		}) {
+			clientMutationId
+		}
+	}`, fieldId, itemId, projectId, uuid.NewString(), valueQuery)
+
+	res, err := c.request(query, &result)
+	if err != nil {
+		return result, res, err
+	}
+	err = getErrorFromErrors(result.Errors)
 
 	return result, res, err
 
