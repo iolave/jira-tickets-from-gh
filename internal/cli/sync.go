@@ -12,41 +12,56 @@ import (
 	jira "github.com/ctreminiom/go-atlassian/jira/v3"
 	"github.com/iolave/jira-tickets-from-gh/internal/github"
 	"github.com/iolave/jira-tickets-from-gh/internal/models"
+	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
 )
 
 // SyncCmdAction syncs GitHub projects with Jira cloud boards.
 func SyncCmdAction(args Cmd) {
+	level := logrus.InfoLevel
+	if args.Debug != nil && *args.Debug == true {
+		level = logrus.DebugLevel
+	}
+	log := newLogger(level)
+	log.Debugln("initializing db models")
 	m, err := models.Initialize()
 
 	if err != nil {
+		log.WithFields(logrus.Fields{"err": err}).Errorln("db models initialization failed")
 		exitFromErr(err)
 	}
 
 	if args.Sync == nil {
+		log.WithFields(logrus.Fields{"err": err}).Errorln("call to sync action args.Sync property is nil")
 		exitOnInvalidCall("sync")
 	}
 
+	log.WithFields(logrus.Fields{"config": args.Sync.Config}).Debugln("reading config file from location")
 	b, err := os.ReadFile(args.Sync.Config)
 
 	if err != nil {
+		log.WithFields(logrus.Fields{"config": args.Sync.Config, "err": err}).Errorln("reading config file from location failed")
 		exitFromErr(err)
 	}
 
+	log.Debugln("parsing config content")
 	var config Config
-
 	err = yaml.Unmarshal(b, &config)
 	if err != nil {
+		log.WithFields(logrus.Fields{"err": err}).Errorln("parsing config content failed")
 		exitFromErr(err)
 	}
 
+	log.Debugln("validating config properties")
 	err = config.validate()
 	if err != nil {
+		log.WithFields(logrus.Fields{"err": err}).Errorln("config properties validation failed")
 		exitFromErr(err)
 	}
 
 	if args.GithubToken == nil {
 		err := errors.New(`please set the "GITHUB_TOKEN" env variable`)
+		log.WithFields(logrus.Fields{"err": err}).Errorln("GithubToken property is nil")
 		exitFromErr(err)
 	}
 	gh := github.New(*args.GithubToken)
@@ -58,65 +73,62 @@ func SyncCmdAction(args Cmd) {
 		go func() {
 			// Decrement the counter when the go routine completes
 			defer wg.Done()
-			syncProject(args, config, i, m, gh)
+			syncProject(args, config, i, m, gh, log)
 		}()
 	}
 	wg.Wait()
 }
 
-func syncProject(args Cmd, config Config, projPos int, m *models.Models, gh *github.GitHubClient) {
-	if args.JiraEmail == nil {
-		err := errors.New(`please set the "JIRA_EMAIL" env variable`)
-		exitFromErr(err)
-	}
-
-	if args.JiraToken == nil {
-		err := errors.New(`please set the "JIRA_TOKEN" env variable`)
-		exitFromErr(err)
-	}
-
+func syncProject(args Cmd, config Config, projPos int, m *models.Models, gh *github.GitHubClient, log *logrus.Logger) {
 	projectCfg := config.Projects[projPos]
+	log.WithFields(logrus.Fields{"project": projectCfg.Name}).Debugln("syncing project")
 
 	// creates new jira client
+	log.WithFields(logrus.Fields{"project": projectCfg.Name}).Debugln("creating new jira client")
 	url := fmt.Sprintf("https://%s.atlassian.net", projectCfg.Jira.Subdomain)
 	jc, err := jira.New(nil, url)
 	if err != nil {
+		log.WithFields(logrus.Fields{"err": err, "project": projectCfg.Name}).Errorln("failed creating jira client")
 		exitFromErr(err)
 	}
+	log.WithFields(logrus.Fields{"project": projectCfg.Name}).Debugln("getting jira creds")
 	token, email, err := getProjectJiraCreds(args, projectCfg.Name)
 	if err != nil {
+		log.WithFields(logrus.Fields{"err": err, "project": projectCfg.Name}).Errorln("failed to retrieve jira creds")
 		exitFromErr(err)
 	}
 	jc.Auth.SetBasicAuth(email, token)
 
 	// get and set required github project fields into the model
+	log.WithFields(logrus.Fields{"project": projectCfg.Name}).Debugln("retrieving github project fields")
 	fieldsResult, _, err := gh.GetProjectFields(projectCfg.Github.ProjectID)
 	if err != nil {
+		log.WithFields(logrus.Fields{"err": err, "project": projectCfg.Name}).Errorln("failed retrieving github project fields")
 		exitFromErr(err)
 	}
-	fieldsIds := struct{ jiraUrl, jiraIssueType, title, estimate, status, repo, assignees string }{}
+	fieldsIds := struct{ JiraUrl, JiraIssueType, Title, Estimate, Status, Repo, Assignees string }{}
 	for _, v := range fieldsResult.Data.Node.Fields.Nodes {
 		switch v.Name {
 		case models.FIELD_NAME_JIRA_URL:
-			fieldsIds.jiraUrl = v.ID
+			fieldsIds.JiraUrl = v.ID
 		case models.FIELD_NAME_JIRA_ISSUE_TYPE:
-			fieldsIds.jiraIssueType = v.ID
+			fieldsIds.JiraIssueType = v.ID
 		case models.FIELD_NAME_TITLE:
-			fieldsIds.title = v.ID
+			fieldsIds.Title = v.ID
 		case models.FIELD_NAME_ESTIMATE:
-			fieldsIds.estimate = v.ID
+			fieldsIds.Estimate = v.ID
 		case models.FIELD_NAME_STATUS:
-			fieldsIds.status = v.ID
+			fieldsIds.Status = v.ID
 		case models.FIELD_NAME_ASSIGNEES:
-			fieldsIds.assignees = v.ID
+			fieldsIds.Assignees = v.ID
 		case models.FIELD_NAME_REPO:
-			fieldsIds.repo = v.ID
+			fieldsIds.Repo = v.ID
 		}
 	}
 	v := reflect.ValueOf(fieldsIds)
 	for i := 0; i < v.NumField(); i++ {
 		if v.Field(i).String() == "" {
-			exitFromErr(fmt.Errorf(`error: missing field in project "%s", make sure it have the following fields [%s, %s, %s, %s, %s, %s, %s]`,
+			err := fmt.Errorf(`error: missing field in project "%s", make sure it have the following fields [%s, %s, %s, %s, %s, %s, %s]`,
 				projectCfg.Name,
 				models.FIELD_NAME_JIRA_URL,
 				models.FIELD_NAME_JIRA_ISSUE_TYPE,
@@ -125,14 +137,22 @@ func syncProject(args Cmd, config Config, projPos int, m *models.Models, gh *git
 				models.FIELD_NAME_STATUS,
 				models.FIELD_NAME_ASSIGNEES,
 				models.FIELD_NAME_REPO,
-			))
+			)
+			log.WithFields(logrus.Fields{"err": err, "project": projectCfg.Name}).Errorln("some fields are not present in github project")
+			exitFromErr(err)
 		}
 
 	}
 	// TODO: maybe is not necesesary to store the project fields id as they can be accessed from variables
-	_, err = m.Projects.Upsert(projectCfg.Github.ProjectID, fieldsIds.jiraUrl, fieldsIds.jiraIssueType, fieldsIds.title, fieldsIds.estimate, fieldsIds.status, fieldsIds.assignees, fieldsIds.repo)
+	log.WithFields(logrus.Fields{"project": projectCfg.Name, "fields": fieldsIds}).Debugln("upserting project fields ids")
+	_, err = m.Projects.Upsert(projectCfg.Github.ProjectID, fieldsIds.JiraUrl, fieldsIds.JiraIssueType, fieldsIds.Title, fieldsIds.Estimate, fieldsIds.Status, fieldsIds.Assignees, fieldsIds.Repo)
+	if err != nil {
+		log.WithFields(logrus.Fields{"err": err, "project": projectCfg.Name, "fields": fieldsIds}).Errorln("upserting project fields ids failed")
+		exitFromErr(err)
+	}
 
 	// translates github users to jira account ids
+	log.WithFields(logrus.Fields{"project": projectCfg.Name, "assignees": projectCfg.Assignees}).Debugln("translating jira emails to github users")
 	assigneesMap := map[string]string{}
 
 	for i := 0; i < len(projectCfg.Assignees); i++ {
@@ -141,10 +161,12 @@ func syncProject(args Cmd, config Config, projPos int, m *models.Models, gh *git
 		users, _, err := jc.User.Search.Do(context.Background(), "", email, 0, 2)
 
 		if err != nil {
+			log.WithFields(logrus.Fields{"err": err, "project": projectCfg.Name, "assignee": projectCfg.Assignees[i].JiraEmail}).Errorln("translating jira emails to github user failed")
 			exitFromErr(err)
 		}
 
 		if len(users) != 1 {
+			log.WithFields(logrus.Fields{"project": projectCfg.Name, "assignee": projectCfg.Assignees[i].JiraEmail}).Warnln("found more than one match while translating jira email to github user")
 			continue
 		}
 		assigneesMap[projectCfg.Assignees[i].GHUser] = users[0].AccountID

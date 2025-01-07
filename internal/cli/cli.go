@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -15,9 +17,18 @@ type Cmd struct {
 	Version     *bool      `arg:"--version" help:"display the program version"`
 	GithubToken *string    `arg:"env:GITHUB_TOKEN,--gh-token" help:"GitHub token" placeholder:"<STRING>"`
 	JiraEmail   *string    `arg:"env:JIRA_EMAIL,--jira-email" help:"Jira email used for basic auth" placeholder:"<STRING>"`
+	Debug       *bool      `arg:"--debug" help:"enables debug mode"`
 	JiraToken   *string    `arg:"env:JIRA_TOKEN,--jira-token" help:"Jira api token used for basic auth" placeholder:"<STRING>"`
 	Github      *GithubCmd `arg:"subcommand:github" help:"GitHub utilities" `
 	Sync        *SyncCmd   `arg:"subcommand:sync" help:"sync GitHub project tickets with Jira"`
+}
+
+func newLogger(level logrus.Level) *logrus.Logger {
+	log := logrus.New()
+	log.SetLevel(level)
+	//log.SetReportCaller(true)
+	log.SetFormatter(&logrus.JSONFormatter{})
+	return log
 }
 
 // PrintVersion prints this program current version.
