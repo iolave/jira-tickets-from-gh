@@ -5,6 +5,16 @@ import (
 	"fmt"
 )
 
+const (
+	FIELD_NAME_JIRA_URL        string = "Jira URL"
+	FIELD_NAME_JIRA_ISSUE_TYPE string = "Jira issue type"
+	FIELD_NAME_TITLE           string = "Title"
+	FIELD_NAME_ESTIMATE        string = "Estimate"
+	FIELD_NAME_STATUS          string = "Status"
+	FIELD_NAME_ASSIGNEES       string = "Assignees"
+	FIELD_NAME_REPO            string = "Repository"
+)
+
 type Project struct {
 	models *Models
 	ID     string // github project id
