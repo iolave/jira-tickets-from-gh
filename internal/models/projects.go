@@ -33,8 +33,20 @@ func (p Project) UpsertIssue(id, title string, status *IssueStatus, jiraUrl, jir
 	return p.models.Issues.Upsert(p.ID, id, title, status, jiraUrl, jiraIssueType, repo, estimate, assignees)
 }
 
+func (p Project) UpsertManyIssues(issues []RemoteIssue) ([]*Issue, error) {
+	return p.models.Issues.UpsertMany(p.ID, issues)
+}
+
+func (p Project) UpdateIssueUrl(id, jiraUrl string) error {
+	return p.models.Issues.UpdateUrl(p.ID, id, jiraUrl)
+}
+
 func (p Project) GetIssue(id string) (*Issue, error) {
 	return p.models.Issues.Get(p.ID, id)
+}
+
+func (p Project) GetAllIssues() ([]*Issue, error) {
+	return p.models.Issues.GetAll(p.ID)
 }
 
 func (p Project) GetIssuesWithoutUrl() ([]*Issue, error) {
@@ -43,6 +55,10 @@ func (p Project) GetIssuesWithoutUrl() ([]*Issue, error) {
 
 func (p Project) GetIssuesWithUrl() ([]*Issue, error) {
 	return p.models.Issues.GetWithUrl(p.ID)
+}
+
+func (p Project) GetIssuesDiff(issues []RemoteIssue) ([]Diff, error) {
+	return p.models.Issues.GetThoseWithDiff(p.ID, issues)
 }
 
 func (p Project) FindIssuesThatExist(ids []string) ([]string, error) {

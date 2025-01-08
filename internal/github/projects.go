@@ -1,6 +1,7 @@
 package github
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -185,6 +186,13 @@ type GetProjectItemsResult struct {
 			} `json:"items"`
 		} `json:"node"`
 	} `json:"data"`
+}
+
+func (r GetProjectItemsResult) UnmarshallItems(v any) {
+	nodes := r.Data.Node.Items.Nodes
+
+	b, _ := json.Marshal(nodes)
+	_ = json.Unmarshal(b, v)
 }
 
 // TODO: Add better way to access items

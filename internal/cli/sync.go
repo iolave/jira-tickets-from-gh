@@ -7,10 +7,15 @@ import (
 	"os"
 	"reflect"
 	"regexp"
+	"slices"
+	"strings"
 	"sync"
+	"time"
 
 	jira "github.com/ctreminiom/go-atlassian/jira/v3"
+	jiramodels "github.com/ctreminiom/go-atlassian/pkg/infra/models"
 	"github.com/iolave/jira-tickets-from-gh/internal/github"
+	"github.com/iolave/jira-tickets-from-gh/internal/helpers"
 	"github.com/iolave/jira-tickets-from-gh/internal/models"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
@@ -145,7 +150,7 @@ func syncProject(args Cmd, config Config, projPos int, m *models.Models, gh *git
 	}
 	// TODO: maybe is not necesesary to store the project fields id as they can be accessed from variables
 	log.WithFields(logrus.Fields{"project": projectCfg.Name, "fields": fieldsIds}).Debugln("upserting project fields ids")
-	_, err = m.Projects.Upsert(projectCfg.Github.ProjectID, fieldsIds.JiraUrl, fieldsIds.JiraIssueType, fieldsIds.Title, fieldsIds.Estimate, fieldsIds.Status, fieldsIds.Assignees, fieldsIds.Repo)
+	p, err := m.Projects.Upsert(projectCfg.Github.ProjectID, fieldsIds.JiraUrl, fieldsIds.JiraIssueType, fieldsIds.Title, fieldsIds.Estimate, fieldsIds.Status, fieldsIds.Assignees, fieldsIds.Repo)
 	if err != nil {
 		log.WithFields(logrus.Fields{"err": err, "project": projectCfg.Name, "fields": fieldsIds}).Errorln("upserting project fields ids failed")
 		exitFromErr(err)
@@ -171,6 +176,200 @@ func syncProject(args Cmd, config Config, projPos int, m *models.Models, gh *git
 		}
 		assigneesMap[projectCfg.Assignees[i].GHUser] = users[0].AccountID
 	}
+
+	log.WithFields(logrus.Fields{"project": projectCfg.Name}).Debugln("querying local issues")
+	issues, err := p.GetAllIssues()
+	if err != nil {
+		log.WithFields(logrus.Fields{"err": err, "project": projectCfg.Name}).Errorln("querying local issues failed")
+		exitFromErr(err)
+	}
+	if len(issues) == 0 {
+		var remoteIssues []models.RemoteIssue
+		log.WithFields(logrus.Fields{"project": projectCfg.Name}).Debugln("querying gh remote issues")
+		remoteIssuesResult, _, err := gh.GetProjectItems(p.ID, getGHFields())
+		if err != nil {
+			log.WithFields(logrus.Fields{"err": err, "project": projectCfg.Name}).Errorln("querying gh remote issues failed")
+			exitFromErr(err)
+		}
+
+		log.WithFields(logrus.Fields{"project": projectCfg.Name}).Debugln("upserting remote issues")
+		remoteIssuesResult.UnmarshallItems(&remoteIssues)
+		_, err = p.UpsertManyIssues(remoteIssues)
+		if err != nil {
+			log.WithFields(logrus.Fields{"err": err, "project": projectCfg.Name}).Errorln("upserting remote issues failed")
+			exitFromErr(err)
+		}
+
+		log.WithFields(logrus.Fields{"project": projectCfg.Name}).Debugln("querying local issues with jira url")
+		issues, err := p.GetIssuesWithUrl()
+		if err != nil {
+			log.WithFields(logrus.Fields{"err": err, "project": projectCfg.Name}).Errorln("querying local issues with jira url failed")
+			exitFromErr(err)
+		}
+		for _, is := range issues {
+			updateJiraIssueFromGhIssueWithUrl(config, projPos, jc, *is)
+		}
+
+		log.WithFields(logrus.Fields{"project": projectCfg.Name}).Debugln("querying local issues without jira url")
+		issues, err = p.GetIssuesWithoutUrl()
+		if err != nil {
+			log.WithFields(logrus.Fields{"err": err, "project": projectCfg.Name}).Errorln("querying local issues without jira url failed")
+			exitFromErr(err)
+		}
+		for _, is := range issues {
+			if err = createJiraIssueFromGhIssueWithoutUrl(
+				config,
+				projPos,
+				jc,
+				gh,
+				*p,
+				*is,
+				assigneesMap,
+			); err != nil {
+				exitFromErr(err)
+			}
+
+		}
+	}
+
+	for config.SleepTime != nil && *config.SleepTime >= 0 {
+		log.WithFields(logrus.Fields{"sleepTime": *config.SleepTime, "project": projectCfg.Name}).Infoln("sleeping")
+		time.Sleep(time.Duration(*config.SleepTime) * time.Millisecond)
+
+		log.WithFields(logrus.Fields{"project": projectCfg.Name}).Infoln("refreshing remote github issues")
+		remoteIssuesResult, _, err := gh.GetProjectItems(p.ID, getGHFields())
+		var remoteIssues []models.RemoteIssue
+		remoteIssuesResult.UnmarshallItems(&remoteIssues)
+		if err != nil {
+			log.WithFields(logrus.Fields{"err": err, "project": projectCfg.Name}).Errorln("refreshing remote github issues fields")
+			continue
+		}
+
+		log.WithFields(logrus.Fields{"project": projectCfg.Name}).Debugln("obtaining local issues diff")
+		diffs, err := p.GetIssuesDiff(remoteIssues)
+		if err != nil {
+			log.WithFields(logrus.Fields{"err": err, "project": projectCfg.Name}).Errorln("obtaining local issues diff failed")
+			exitFromErr(err)
+		}
+
+		for _, issueDiff := range diffs {
+			if issueDiff.Issue.JiraURL == nil {
+				createJiraIssueFromGhIssueWithoutUrl(
+					config,
+					projPos,
+					jc,
+					gh,
+					*p,
+					*issueDiff.Issue,
+					assigneesMap,
+				)
+				continue
+			}
+			urlSplitted := strings.Split(*issueDiff.Issue.JiraURL, "/")
+			if len(urlSplitted) == 0 {
+				createJiraIssueFromGhIssueWithoutUrl(
+					config,
+					projPos,
+					jc,
+					gh,
+					*p,
+					*issueDiff.Issue,
+					assigneesMap,
+				)
+				continue
+			}
+			issueKey := urlSplitted[len(urlSplitted)-1]
+
+			switch *issueDiff.PrevStatus {
+			case models.STATUS_TODO:
+				switch issueDiff.NewStatus {
+				case models.STATUS_WIP:
+					// TODO: this should return an error
+					transitionToWip(jc, issueKey, projPos, config, *issueDiff.Issue)
+
+					if _, err := p.UpsertIssue(
+						issueDiff.Issue.GitHubID,
+						issueDiff.Issue.Title,
+						issueDiff.Issue.Status,
+						issueDiff.Issue.JiraURL,
+						issueDiff.Issue.JiraIssueType,
+						issueDiff.Issue.Repository,
+						issueDiff.Issue.Estimate,
+						&issueDiff.Issue.Assignees,
+					); err != nil {
+						log.WithFields(logrus.Fields{"err": err, "projectId": p.ID}).Errorln("failed to upsert issue")
+					}
+				case models.STATUS_DONE:
+					// TODO: this should return an error
+					transitionToWip(jc, issueKey, projPos, config, *issueDiff.Issue)
+					// TODO: this should return an error
+					transitionToDone(jc, issueKey, projPos, config, *issueDiff.Issue)
+
+					if _, err := p.UpsertIssue(
+						issueDiff.Issue.GitHubID,
+						issueDiff.Issue.Title,
+						issueDiff.Issue.Status,
+						issueDiff.Issue.JiraURL,
+						issueDiff.Issue.JiraIssueType,
+						issueDiff.Issue.Repository,
+						issueDiff.Issue.Estimate,
+						&issueDiff.Issue.Assignees,
+					); err != nil {
+						log.WithFields(logrus.Fields{"err": err, "projectId": p.ID}).Errorln("failed to upsert issue")
+					}
+				}
+			case models.STATUS_WIP:
+				switch issueDiff.NewStatus {
+				case models.STATUS_DONE:
+					// TODO: this should return an error
+					transitionToDone(jc, issueKey, projPos, config, *issueDiff.Issue)
+
+					if _, err := p.UpsertIssue(
+						issueDiff.Issue.GitHubID,
+						issueDiff.Issue.Title,
+						issueDiff.Issue.Status,
+						issueDiff.Issue.JiraURL,
+						issueDiff.Issue.JiraIssueType,
+						issueDiff.Issue.Repository,
+						issueDiff.Issue.Estimate,
+						&issueDiff.Issue.Assignees,
+					); err != nil {
+						log.WithFields(logrus.Fields{"err": err, "projectId": p.ID}).Errorln("failed to upsert issue")
+					}
+				}
+			}
+		}
+
+		log.WithFields(logrus.Fields{"project": projectCfg.Name}).Debugln("obtaining new issues")
+		ids := []string{}
+		for _, v := range remoteIssues {
+			ids = append(ids, v.ID)
+		}
+		idsThatdoesntExist, err := p.FindIssuesThatDoesntExist(ids)
+		if err != nil {
+			log.WithFields(logrus.Fields{"err": err, "project": projectCfg.Name}).Errorln("obtaining new issues failed")
+			exitFromErr(err)
+		}
+		newIssues := helpers.FilterSlice(remoteIssues, func(i models.RemoteIssue) bool {
+			idx := slices.IndexFunc(idsThatdoesntExist, func(id string) bool { return id == i.ID })
+			if idx == -1 {
+				return false
+			}
+			return true
+		})
+		for _, newIssue := range newIssues {
+			createJiraIssueFromGhIssueWithoutUrl(
+				config,
+				projPos,
+				jc,
+				gh,
+				*p,
+				*newIssue.ToIssue(p.ID),
+				assigneesMap,
+			)
+		}
+		fmt.Println(newIssues)
+	}
 }
 
 type SyncCmd struct {
@@ -178,8 +377,8 @@ type SyncCmd struct {
 }
 
 type Config struct {
-	SleepTime *string `yaml:"sleepTime"`
-	EnableAPI *bool   `yaml:"enableApi"`
+	SleepTime *int  `yaml:"sleepTime"`
+	EnableAPI *bool `yaml:"enableApi"`
 	Projects  []struct {
 		Name      string `yaml:"name"`
 		Assignees []struct {
@@ -288,4 +487,159 @@ func getProjectJiraCreds(args Cmd, projectName string) (token string, email stri
 	}
 
 	return *args.JiraToken, *args.JiraEmail, nil
+}
+
+func getGHFields() []github.ProjectField {
+	return []github.ProjectField{
+		{Type: github.PROJECT_FIELD_TEXT, FieldAlias: "title", FieldName: "Title"},
+		{Type: github.PROJECT_FIELD_SINGLE_SELECT, FieldAlias: "status", FieldName: "Status"},
+		{Type: github.PROJECT_FIELD_USER, FieldAlias: "assignees", FieldName: "Assignees"},
+		{Type: github.PROJECT_FIELD_NUMBER, FieldAlias: "estimate", FieldName: "Estimate"},
+		{Type: github.PROJECT_FIELD_SINGLE_SELECT, FieldAlias: "jiraIssueType", FieldName: "Jira issue type"},
+		{Type: github.PROJECT_FIELD_TEXT, FieldAlias: "jiraUrl", FieldName: "Jira URL"},
+		{Type: github.PROJECT_FIELD_REPO, FieldAlias: "repository", FieldName: "Repository"},
+	}
+}
+
+func updateJiraIssueFromGhIssueWithUrl(
+	config Config,
+	projPos int,
+	jc *jira.Client,
+	is models.Issue,
+) error {
+	urlSplitted := strings.Split(*is.JiraURL, "/")
+	if len(urlSplitted) == 0 {
+		return errors.New("issue url is nil")
+	}
+	key := urlSplitted[len(urlSplitted)-1]
+
+	switch *is.Status {
+	case models.STATUS_WIP:
+		transitionToWip(jc, key, projPos, config, is)
+	case models.STATUS_DONE:
+		transitionToWip(jc, key, projPos, config, is)
+		transitionToDone(jc, key, projPos, config, is)
+	}
+
+	return nil
+
+}
+
+func createJiraIssueFromGhIssueWithoutUrl(
+	config Config,
+	projPos int,
+	jc *jira.Client,
+	gh *github.GitHubClient,
+	p models.Project,
+	is models.Issue,
+	assignees map[string]string,
+) error {
+	if is.Status == nil {
+		return errors.New("item does not have any status, assuming it is not ok and skipping creation")
+	}
+
+	var assignee *string
+	if len(is.Assignees) > 0 {
+		login := assignees[is.Assignees[0]]
+		assignee = &login
+	}
+
+	var summary string
+	if prefix := config.Projects[projPos].Jira.IssuePrefix; prefix != nil && *prefix != "" {
+		summary = fmt.Sprintf("%s %s", *prefix, is.Title)
+	} else {
+		summary = is.Title
+	}
+
+	jiraIssue := &jiramodels.IssueScheme{Fields: &jiramodels.IssueFieldsScheme{
+		IssueType: &jiramodels.IssueTypeScheme{Name: *is.JiraIssueType},
+		Project:   &jiramodels.ProjectScheme{Key: config.Projects[projPos].Jira.ProjectKey},
+		Summary:   summary,
+	}}
+	if assignee != nil {
+		jiraIssue.Fields.Assignee = &jiramodels.UserScheme{AccountID: *assignee}
+	}
+	result, _, err := jc.Issue.Create(context.Background(), jiraIssue, nil)
+	url := fmt.Sprintf("https://%s.atlassian.net/browse/%s", config.Projects[projPos].Jira.Subdomain, result.Key)
+	if err != nil {
+		return err
+	}
+
+	_, _, err = gh.UpdateProjectItemField(is.GitHubProjectID, is.GitHubID, p.Fields.JiraURL, github.PROJECT_FIELD_TEXT, url)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(err, is.GitHubID, url)
+	if _, err := p.UpsertIssue(
+		is.GitHubID,
+		is.Title,
+		is.Status,
+		&url,
+		is.JiraIssueType,
+		is.Repository,
+		is.Estimate,
+		&is.Assignees,
+	); err != nil {
+		return err
+	}
+
+	switch *is.Status {
+	case models.STATUS_WIP:
+		transitionToWip(jc, result.Key, projPos, config, is)
+	case models.STATUS_DONE:
+		transitionToWip(jc, result.Key, projPos, config, is)
+		transitionToDone(jc, result.Key, projPos, config, is)
+	}
+	return nil
+}
+
+func transitionToWip(jc *jira.Client, key string, pos int, config Config, is models.Issue) {
+	issueTypes := helpers.FilterSlice(
+		config.Projects[pos].Jira.Issues,
+		func(it struct {
+			Type              string `yaml:"type"`
+			TransitionsToWIP  []int  `yaml:"transitionsToWip"`
+			TransitionsToDone []int  `yaml:"transitionsToDone"`
+		}) bool {
+			if is.JiraIssueType == nil {
+				return false
+			}
+			return it.Type == *is.JiraIssueType
+		})
+	if len(issueTypes) == 0 {
+		return
+	}
+	transitions := issueTypes[len(issueTypes)-1].TransitionsToWIP
+	fmt.Println(transitions)
+	for _, t := range transitions {
+		_, err := jc.Issue.Move(context.Background(), key, fmt.Sprintf("%d", t), nil)
+		// TODO: log the error
+		fmt.Println(err)
+	}
+}
+
+func transitionToDone(jc *jira.Client, key string, pos int, config Config, is models.Issue) {
+	issueTypes := helpers.FilterSlice(
+		config.Projects[pos].Jira.Issues,
+		func(it struct {
+			Type              string `yaml:"type"`
+			TransitionsToWIP  []int  `yaml:"transitionsToWip"`
+			TransitionsToDone []int  `yaml:"transitionsToDone"`
+		}) bool {
+			if is.JiraIssueType == nil {
+				return false
+			}
+			return it.Type == *is.JiraIssueType
+		})
+	if len(issueTypes) == 0 {
+		return
+	}
+	transitions := issueTypes[len(issueTypes)-1].TransitionsToDone
+	fmt.Println(transitions)
+	for _, t := range transitions {
+		_, err := jc.Issue.Move(context.Background(), key, fmt.Sprintf("%d", t), nil)
+		// TODO: log the error
+		fmt.Println(err)
+	}
 }

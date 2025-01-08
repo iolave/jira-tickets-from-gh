@@ -7,6 +7,57 @@ import (
 	"strings"
 )
 
+type RemoteIssue struct {
+	ID       string `json:"id"`
+	Estimate struct {
+		Num *int `json:"number"`
+	} `json:"estimate"`
+	JiraIssueType *struct {
+		Name     string `json:"name"`
+		OptionID string `json:"optionId"`
+	} `json:"jiraIssueType"`
+	JiraUrl struct {
+		Text *string `json:"text"`
+	} `json:"jiraUrl"`
+	Repository struct {
+		Repository struct {
+			Text *string `json:"nameWithOwner"`
+		} `json:"repository"`
+	} `json:"repository"`
+	Status *struct {
+		Name     string `json:"name"`
+		OptionID string `json:"optionId"`
+	} `json:"status"`
+	Title struct {
+		Text string `json:"text"`
+	} `json:"title"`
+	Assignees struct {
+		Users struct {
+			Nodes []struct {
+				Login string `json:"login"`
+			} `json:"nodes"`
+		} `json:"users"`
+	} `json:"assignees"`
+}
+
+func (ri RemoteIssue) ToIssue(projectId string) *Issue {
+	assinees := []string{}
+	for _, v := range ri.Assignees.Users.Nodes {
+		assinees = append(assinees, v.Login)
+	}
+	return &Issue{
+		GitHubProjectID: projectId,
+		GitHubID:        ri.ID,
+		Title:           ri.Title.Text,
+		JiraURL:         ri.JiraUrl.Text,
+		JiraIssueType:   &ri.JiraIssueType.Name,
+		Estimate:        ri.Estimate.Num,
+		Status:          (*IssueStatus)(&ri.Status.Name),
+		Repository:      ri.Repository.Repository.Text,
+		Assignees:       assinees,
+	}
+}
+
 type Issues struct {
 	models *Models
 }
@@ -63,7 +114,76 @@ func (service *Issues) Upsert(projectId, id, title string, status *IssueStatus, 
 	return issue, nil
 }
 
-// Get gets a project issue, if no issue found *Issue will be nil
+func (service *Issues) UpsertMany(projectId string, issues []RemoteIssue) ([]*Issue, error) {
+	var resultIssues []*Issue
+	for _, issue := range issues {
+		var assignees []string
+		for _, node := range issue.Assignees.Users.Nodes {
+			assignees = append(assignees, node.Login)
+		}
+
+		resultIssue := new(Issue)
+		resultIssue.GitHubProjectID = projectId
+		resultIssue.GitHubID = issue.ID
+		resultIssue.Title = issue.Title.Text
+		resultIssue.JiraIssueType = &issue.JiraIssueType.Name
+		resultIssue.JiraURL = issue.JiraUrl.Text
+		resultIssue.Assignees = assignees
+		resultIssue.Repository = issue.Repository.Repository.Text
+		resultIssue.Estimate = issue.Estimate.Num
+		if issue.Status == nil {
+			resultIssue.Status = nil
+		} else if issue.Status.Name == string(STATUS_WIP) || issue.Status.Name == string(STATUS_DONE) || issue.Status.Name == string(STATUS_TODO) {
+			resultIssue.Status = (*IssueStatus)(&issue.Status.Name)
+		} else {
+			resultIssue.Status = nil
+		}
+		resultIssues = append(resultIssues, resultIssue)
+	}
+
+	tx, err := service.models.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	stmt := `INSERT OR REPLACE INTO issues (
+		projectId,
+		id,
+		jiraUrl,
+		jiraIssueType,
+		title,
+		estimate,
+		status,
+		assignees,
+		repository
+	) VALUES (?,?,?,?,?,?,?,?,?)`
+	for _, v := range resultIssues {
+		assigneesStr := strings.Join(v.Assignees, ";")
+		_, err := tx.Exec(stmt, v.GitHubProjectID, v.GitHubID, v.JiraURL, v.JiraIssueType, v.Title, v.Estimate, v.Status, assigneesStr, v.Repository)
+		if err != nil {
+			return nil, err
+		}
+	}
+	err = tx.Commit()
+	if err != nil {
+		return nil, err
+	}
+
+	return resultIssues, nil
+}
+
+func (service *Issues) UpdateUrl(projectId, id, jiraUrl string) error {
+	stmt := `UPDATE issues SET jiraUrl = ?
+		WHERE projectId = ? AND id = ?`
+	_, err := service.models.db.Exec(
+		stmt,
+		jiraUrl,
+		projectId,
+		id,
+	)
+	return err
+}
+
+// Get retrieves a project issue, if no issue found *Issue will be nil
 func (p *Issues) Get(githubProjectId, githubId string) (*Issue, error) {
 	if githubProjectId == "" {
 		return nil, errors.New(`please provide a value for "githubProjectId"`)
@@ -120,7 +240,107 @@ func (p *Issues) Get(githubProjectId, githubId string) (*Issue, error) {
 	return issue, nil
 }
 
-// Get gets a project issue, if no issue found *Issue will be nil
+// GetAll retrieves all project issues, if no issue found *Issue will be nil.
+func (p *Issues) GetAll(githubProjectId string) ([]*Issue, error) {
+	if githubProjectId == "" {
+		return nil, errors.New(`please provide a value for "githubProjectId"`)
+	}
+
+	stmt := fmt.Sprintf(`SELECT
+		projectId,
+		id,
+		jiraUrl,
+		jiraIssueType,
+		title,
+		estimate,
+		status,
+		assignees,
+		repository
+	FROM issues
+	WHERE projectId = "%s"
+	`, githubProjectId)
+	rows, err := p.models.db.Query(stmt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	issues := []*Issue{}
+	for rows.Next() {
+		issue := new(Issue)
+		var assigneesStr *string
+
+		err = rows.Scan(
+			&issue.GitHubProjectID,
+			&issue.GitHubID,
+			&issue.JiraURL,
+			&issue.JiraIssueType,
+			&issue.Title,
+			&issue.Estimate,
+			&issue.Status,
+			&assigneesStr,
+			&issue.Repository,
+		)
+		if err != nil {
+			return nil, err
+		}
+		assignees := []string{}
+		if assigneesStr != nil && *assigneesStr != "" {
+			assignees = strings.Split(*assigneesStr, ";")
+		}
+		issue.Assignees = assignees
+		// uncomment when models is avaialbe within an issue
+		// issue.models = p.models
+		issues = append(issues, issue)
+	}
+
+	return issues, nil
+}
+
+type Diff struct {
+	PrevStatus *IssueStatus
+	NewStatus  IssueStatus
+	Issue      *Issue
+}
+
+func (s *Issues) GetThoseWithDiff(projectId string, issues []RemoteIssue) (diff []Diff, err error) {
+	for _, remoteIssue := range issues {
+		localIssue, err := s.Get(projectId, remoteIssue.ID)
+		if err != nil {
+			return nil, err
+		}
+		if localIssue == nil {
+			continue
+		}
+		if *localIssue.Status == STATUS_DONE {
+			continue
+		}
+		if (*localIssue.Status == STATUS_WIP && remoteIssue.Status.Name == string(STATUS_DONE)) || (*localIssue.Status == STATUS_TODO && (remoteIssue.Status.Name == string(STATUS_DONE) || remoteIssue.Status.Name == string(STATUS_WIP))) {
+			var assignees []string
+			for _, node := range remoteIssue.Assignees.Users.Nodes {
+				assignees = append(assignees, node.Login)
+			}
+			diff = append(diff, Diff{
+				PrevStatus: localIssue.Status,
+				NewStatus:  IssueStatus(remoteIssue.Status.Name),
+				Issue: &Issue{
+					GitHubProjectID: projectId,
+					GitHubID:        remoteIssue.ID,
+					Title:           remoteIssue.Title.Text,
+					JiraURL:         remoteIssue.JiraUrl.Text,
+					JiraIssueType:   &remoteIssue.JiraIssueType.Name,
+					Status:          (*IssueStatus)(&remoteIssue.Status.Name),
+					Estimate:        remoteIssue.Estimate.Num,
+					Repository:      remoteIssue.Repository.Repository.Text,
+					Assignees:       assignees,
+				},
+			})
+			continue
+		}
+	}
+	return diff, nil
+}
+
+// GetWithoutUrl retrieves project issues whoose jira url field is nil, if no issues are found []*Issue will be nil.
 func (p *Issues) GetWithoutUrl(githubProjectId string) ([]*Issue, error) {
 	if githubProjectId == "" {
 		return nil, errors.New(`please provide a value for "githubProjectId"`)
@@ -177,7 +397,7 @@ func (p *Issues) GetWithoutUrl(githubProjectId string) ([]*Issue, error) {
 	return issues, nil
 }
 
-// Get gets a project issue, if no issue found *Issue will be nil
+// GetWithoutUrl retrieves project issues whoose jira url field is not nil, if no issues are found []*Issue will be nil.
 func (p *Issues) GetWithUrl(githubProjectId string) ([]*Issue, error) {
 	if githubProjectId == "" {
 		return nil, errors.New(`please provide a value for "githubProjectId"`)
