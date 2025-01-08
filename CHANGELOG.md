@@ -7,16 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [unreleased]
 ### Added
+- Config file support including all previous cli options with the following new features:
+  - New `sync[].jira.estimateField` option that allow users to specify the jira issue field name that stores story points (estimate). 
+  - New `sync[].jira.issuePrefix` option that pre-appends the given prefix to jira issue titles. 
+  - New `sync[].jira.issues[].transitionsToWip` and `sync[].jira.issues[].transitionsToWip` option that allows to set transitions per issue type.
 - Verbose environment variable for docker.
 - Docker compose volume to persist executions data.
-- Setting up the `--jira-issue-prefix=<string>` pre-appends the given prefix to jira issue titles.
-- New `--user <string>` option in the list github-projects command.
-- New `--jira-estimate-field <string>` option that allow users to specify the jira issue field name that stores story points (estimate).
+- New `--user <string>` option in the `github list-projects` command.
+
 
 ### Changed
-- Retrieving items from the local storage with(out) an url now checks if the url field is a valid url. This will cause that item's urls that are invalid are going to be repleaced with a valid url that will point to a new jira issue.  
-- `github-projects` command was renamed to `github-project`.
-  - `listOrganization` sub command was renamed to `list`.
+- `github-projects list` command was renamed to `github list-projects`
+- Retrieving items from the local storage with(out) an url now checks if the url field is a valid url. This will cause that item's urls that are invalid are going to be replaced with a valid url that will point to a new jira issue.  
 - GitHub issues that lack of status no longer creates Jira issues to prevent malformed Jira issues.
 
 ### Fixed
