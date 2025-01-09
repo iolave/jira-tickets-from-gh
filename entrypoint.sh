@@ -10,18 +10,20 @@ for to_change in $egrep_res; do
 done
 
 if [ "${VERBOSE}" = "true" ]; then
-	VERBOSE_FLAG="-v"
+	VERBOSE_FLAG="--debug"
 fi
 
-bun run index.ts ${VERBOSE_FLAG} sync \
-	--gh-token=${GH_TOKEN} \
-	--gh-project-id=${GH_PROJECT_ID} \
-	--gh-assignees-map=${GH_USERS_MAP} \
-	--jira-token=${JIRA_TOKEN} \
-	--jira-subdomain=${JIRA_SUBDOMAIN} \
-	--jira-project-key=${JIRA_PROJECT_KEY} \
-	--jira-issue-prefix=${JIRA_ISSUE_PREFIX} \
-	--jira-estiamte-field=${JIRA_ESTIMATE_FIELD} \
-	--transitions-to-wip=${JIRA_WIP_TRANSITIONS} \
-	--transitions-to-done=${JIRA_DONE_TRANSITIONS} \
-	--sleep-time=${SLEEP_TIME}
+export CGO_ENABLED=1
+go run ./cmd/jira-tickets-from-gh/main.go ${VERBOSE_FLAG} sync \
+	--config=./config.yml
+#	--gh-token=${GH_TOKEN} \
+#	--gh-project-id=${GH_PROJECT_ID} \
+#	--gh-assignees-map=${GH_USERS_MAP} \
+#	--jira-token=${JIRA_TOKEN} \
+#	--jira-subdomain=${JIRA_SUBDOMAIN} \
+#	--jira-project-key=${JIRA_PROJECT_KEY} \
+#	--jira-issue-prefix=${JIRA_ISSUE_PREFIX} \
+#	--jira-estiamte-field=${JIRA_ESTIMATE_FIELD} \
+#	--transitions-to-wip=${JIRA_WIP_TRANSITIONS} \
+#	--transitions-to-done=${JIRA_DONE_TRANSITIONS} \
+#	--sleep-time=${SLEEP_TIME}
