@@ -194,6 +194,9 @@ func syncProject(args Cmd, config Config, projPos int, m *models.Models, gh *git
 
 		log.WithFields(logrus.Fields{"project": projectCfg.Name}).Debugln("upserting remote issues")
 		remoteIssuesResult.UnmarshallItems(&remoteIssues)
+		remoteIssues = helpers.FilterSlice(remoteIssues, func(ri models.RemoteIssue) bool {
+			return ri.Status != nil && ri.JiraIssueType != nil
+		})
 		_, err = p.UpsertManyIssues(remoteIssues)
 		if err != nil {
 			log.WithFields(logrus.Fields{"err": err, "project": projectCfg.Name}).Errorln("upserting remote issues failed")
@@ -240,6 +243,9 @@ func syncProject(args Cmd, config Config, projPos int, m *models.Models, gh *git
 		remoteIssuesResult, _, err := gh.GetProjectItems(p.ID, getGHFields())
 		var remoteIssues []models.RemoteIssue
 		remoteIssuesResult.UnmarshallItems(&remoteIssues)
+		remoteIssues = helpers.FilterSlice(remoteIssues, func(ri models.RemoteIssue) bool {
+			return ri.Status != nil && ri.JiraIssueType != nil
+		})
 		if err != nil {
 			log.WithFields(logrus.Fields{"err": err, "project": projectCfg.Name}).Errorln("refreshing remote github issues fields")
 			continue

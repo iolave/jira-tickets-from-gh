@@ -45,17 +45,22 @@ func (ri RemoteIssue) ToIssue(projectId string) *Issue {
 	for _, v := range ri.Assignees.Users.Nodes {
 		assinees = append(assinees, v.Login)
 	}
-	return &Issue{
-		GitHubProjectID: projectId,
-		GitHubID:        ri.ID,
-		Title:           ri.Title.Text,
-		JiraURL:         ri.JiraUrl.Text,
-		JiraIssueType:   &ri.JiraIssueType.Name,
-		Estimate:        ri.Estimate.Num,
-		Status:          (*IssueStatus)(&ri.Status.Name),
-		Repository:      ri.Repository.Repository.Text,
-		Assignees:       assinees,
+	issue := new(Issue)
+	issue.GitHubProjectID = projectId
+	issue.GitHubID = ri.ID
+	issue.Title = ri.Title.Text
+	issue.JiraURL = ri.JiraUrl.Text
+	if ri.JiraIssueType != nil {
+		issue.JiraIssueType = &ri.JiraIssueType.Name
 	}
+	issue.Estimate = ri.Estimate.Num
+	if ri.Status != nil {
+		issue.Status = (*IssueStatus)(&ri.Status.Name)
+	}
+	issue.Repository = ri.Repository.Repository.Text
+	issue.Assignees = assinees
+
+	return issue
 }
 
 type Issues struct {
@@ -126,7 +131,9 @@ func (service *Issues) UpsertMany(projectId string, issues []RemoteIssue) ([]*Is
 		resultIssue.GitHubProjectID = projectId
 		resultIssue.GitHubID = issue.ID
 		resultIssue.Title = issue.Title.Text
-		resultIssue.JiraIssueType = &issue.JiraIssueType.Name
+		if issue.JiraIssueType != nil {
+			resultIssue.JiraIssueType = &issue.JiraIssueType.Name
+		}
 		resultIssue.JiraURL = issue.JiraUrl.Text
 		resultIssue.Assignees = assignees
 		resultIssue.Repository = issue.Repository.Repository.Text
@@ -319,20 +326,24 @@ func (s *Issues) GetThoseWithDiff(projectId string, issues []RemoteIssue) (diff 
 			for _, node := range remoteIssue.Assignees.Users.Nodes {
 				assignees = append(assignees, node.Login)
 			}
+			issue := new(Issue)
+			issue.GitHubProjectID = projectId
+			issue.GitHubID = remoteIssue.ID
+			issue.Title = remoteIssue.Title.Text
+			issue.JiraURL = remoteIssue.JiraUrl.Text
+			if remoteIssue.JiraIssueType != nil {
+				issue.JiraIssueType = &remoteIssue.JiraIssueType.Name
+			}
+			if remoteIssue.Status != nil {
+				issue.Status = (*IssueStatus)(&remoteIssue.Status.Name)
+			}
+			issue.Estimate = remoteIssue.Estimate.Num
+			issue.Repository = remoteIssue.Repository.Repository.Text
+			issue.Assignees = assignees
 			diff = append(diff, Diff{
 				PrevStatus: localIssue.Status,
 				NewStatus:  IssueStatus(remoteIssue.Status.Name),
-				Issue: &Issue{
-					GitHubProjectID: projectId,
-					GitHubID:        remoteIssue.ID,
-					Title:           remoteIssue.Title.Text,
-					JiraURL:         remoteIssue.JiraUrl.Text,
-					JiraIssueType:   &remoteIssue.JiraIssueType.Name,
-					Status:          (*IssueStatus)(&remoteIssue.Status.Name),
-					Estimate:        remoteIssue.Estimate.Num,
-					Repository:      remoteIssue.Repository.Repository.Text,
-					Assignees:       assignees,
-				},
+				Issue:      issue,
 			})
 			continue
 		}
