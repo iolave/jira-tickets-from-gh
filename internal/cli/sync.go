@@ -597,14 +597,21 @@ func createJiraIssueFromGhIssueWithoutUrl(
 		Project:   &jiramodels.ProjectScheme{Key: config.Projects[projPos].Jira.ProjectKey},
 		Summary:   summary,
 	}}
+	jiraIssueCustomFields := &jiramodels.CustomFields{}
+	if estimateField := config.Projects[projPos].Jira.EstimateField; estimateField != nil && is.Estimate != nil {
+		estimate := *is.Estimate
+		jiraIssueCustomFields.Number(*estimateField, float64(estimate))
+	}
 	if assignee != nil {
 		jiraIssue.Fields.Assignee = &jiramodels.UserScheme{AccountID: *assignee}
 	}
-	result, _, err := jc.Issue.Create(context.Background(), jiraIssue, nil)
-	url := fmt.Sprintf("https://%s.atlassian.net/browse/%s", config.Projects[projPos].Jira.Subdomain, result.Key)
+	result, _, err := jc.Issue.Create(context.Background(), jiraIssue, jiraIssueCustomFields)
 	if err != nil {
 		return err
 	}
+
+	fmt.Println(config.Projects[projPos].Jira.Subdomain)
+	url := fmt.Sprintf("https://%s.atlassian.net/browse/%s", config.Projects[projPos].Jira.Subdomain, result.Key)
 
 	_, _, err = gh.UpdateProjectItemField(is.GitHubProjectID, is.GitHubID, p.Fields.JiraURL, github.PROJECT_FIELD_TEXT, url)
 	if err != nil {
