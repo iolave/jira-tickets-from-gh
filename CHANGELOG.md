@@ -15,14 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Docker compose volume to persist executions data.
 - New `--user <string>` option in the `github list-projects` command.
 
-
 ### Changed
 - `github-projects list` command was renamed to `github list-projects`
 - Retrieving items from the local storage with(out) an url now checks if the url field is a valid url. This will cause that item's urls that are invalid are going to be replaced with a valid url that will point to a new jira issue.  
 - GitHub issues that lack of status no longer creates Jira issues to prevent malformed Jira issues.
+- Dockerfile now uses go implementation instead of bun's one. 
 
 ### Fixed
 - GitHub task's estimate field now is reflected in Jira issues.
+
 
 ## [v0.3.0]
 ### Added

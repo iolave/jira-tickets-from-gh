@@ -3,6 +3,7 @@ package models
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 )
@@ -400,6 +401,16 @@ func (p *Issues) GetWithoutUrl(githubProjectId string) ([]*Issue, error) {
 			assignees = strings.Split(*assigneesStr, ";")
 		}
 		issue.Assignees = assignees
+
+		match, err := regexp.MatchString(`^https\:\/\/[a-zA-Z0-9]*\.atlassian\.net\/browse\/.*`, *issue.JiraURL)
+		if err != nil {
+			return nil, err
+		}
+
+		if match {
+			continue
+		}
+
 		// uncomment when models is avaialbe within an issue
 		// issue.models = p.models
 		issues = append(issues, issue)
@@ -457,6 +468,14 @@ func (p *Issues) GetWithUrl(githubProjectId string) ([]*Issue, error) {
 			assignees = strings.Split(*assigneesStr, ";")
 		}
 		issue.Assignees = assignees
+		match, err := regexp.MatchString(`^https\:\/\/[a-zA-Z0-9]*\.atlassian\.net\/browse\/.*`, *issue.JiraURL)
+		if err != nil {
+			return nil, err
+		}
+
+		if !match {
+			continue
+		}
 		// uncomment when models is avaialbe within an issue
 		// issue.models = p.models
 		issues = append(issues, issue)

@@ -11,3 +11,13 @@ func FilterSlice[T any](slice []T, keep func(T) bool) []T {
 
 	return newSlice
 }
+
+func MapSlice[T any](slice []T, mapfn func(T) T) []T {
+	var newSlice []T
+
+	for _, item := range slice {
+		newSlice = append(newSlice, mapfn(item))
+	}
+
+	return newSlice
+}

@@ -197,6 +197,15 @@ func syncProject(args Cmd, config Config, projPos int, m *models.Models, gh *git
 		remoteIssues = helpers.FilterSlice(remoteIssues, func(ri models.RemoteIssue) bool {
 			return ri.Status != nil && ri.JiraIssueType != nil
 		})
+		remoteIssues = helpers.MapSlice(remoteIssues, func(ri models.RemoteIssue) models.RemoteIssue {
+			if ri.JiraUrl.Text != nil {
+				match, _ := regexp.MatchString(`^https\:\/\/[a-zA-Z0-9]*\.atlassian\.net\/browse\/.*`, *ri.JiraUrl.Text)
+				if !match {
+					ri.JiraUrl.Text = nil
+				}
+			}
+			return ri
+		})
 		_, err = p.UpsertManyIssues(remoteIssues)
 		if err != nil {
 			log.WithFields(logrus.Fields{"err": err, "project": projectCfg.Name}).Errorln("upserting remote issues failed")
@@ -246,13 +255,40 @@ func syncProject(args Cmd, config Config, projPos int, m *models.Models, gh *git
 		remoteIssues = helpers.FilterSlice(remoteIssues, func(ri models.RemoteIssue) bool {
 			return ri.Status != nil && ri.JiraIssueType != nil
 		})
+		remoteIssues = helpers.MapSlice(remoteIssues, func(ri models.RemoteIssue) models.RemoteIssue {
+			if ri.JiraUrl.Text != nil {
+				match, _ := regexp.MatchString(`^https\:\/\/[a-zA-Z0-9]*\.atlassian\.net\/browse\/.*`, *ri.JiraUrl.Text)
+				if !match {
+					ri.JiraUrl.Text = nil
+				}
+			}
+			return ri
+		})
 		if err != nil {
 			log.WithFields(logrus.Fields{"err": err, "project": projectCfg.Name}).Errorln("refreshing remote github issues fields")
 			continue
 		}
 
+		riWithoutUrl := helpers.FilterSlice(remoteIssues, func(ri models.RemoteIssue) bool {
+			return ri.JiraUrl.Text == nil
+		})
+		for _, ri := range riWithoutUrl {
+			createJiraIssueFromGhIssueWithoutUrl(
+				config,
+				projPos,
+				jc,
+				gh,
+				*p,
+				*ri.ToIssue(p.ID),
+				assigneesMap,
+			)
+		}
+
 		log.WithFields(logrus.Fields{"project": projectCfg.Name}).Debugln("obtaining local issues diff")
-		diffs, err := p.GetIssuesDiff(remoteIssues)
+		riWithUrl := helpers.FilterSlice(remoteIssues, func(ri models.RemoteIssue) bool {
+			return ri.JiraUrl.Text != nil
+		})
+		diffs, err := p.GetIssuesDiff(riWithUrl)
 		if err != nil {
 			log.WithFields(logrus.Fields{"err": err, "project": projectCfg.Name}).Errorln("obtaining local issues diff failed")
 			exitFromErr(err)
@@ -374,7 +410,6 @@ func syncProject(args Cmd, config Config, projPos int, m *models.Models, gh *git
 				assigneesMap,
 			)
 		}
-		fmt.Println(newIssues)
 	}
 }
 
@@ -576,7 +611,6 @@ func createJiraIssueFromGhIssueWithoutUrl(
 		return err
 	}
 
-	fmt.Println(err, is.GitHubID, url)
 	if _, err := p.UpsertIssue(
 		is.GitHubID,
 		is.Title,
@@ -617,7 +651,6 @@ func transitionToWip(jc *jira.Client, key string, pos int, config Config, is mod
 		return
 	}
 	transitions := issueTypes[len(issueTypes)-1].TransitionsToWIP
-	fmt.Println(transitions)
 	for _, t := range transitions {
 		_, err := jc.Issue.Move(context.Background(), key, fmt.Sprintf("%d", t), nil)
 		// TODO: log the error
@@ -642,7 +675,6 @@ func transitionToDone(jc *jira.Client, key string, pos int, config Config, is mo
 		return
 	}
 	transitions := issueTypes[len(issueTypes)-1].TransitionsToDone
-	fmt.Println(transitions)
 	for _, t := range transitions {
 		_, err := jc.Issue.Move(context.Background(), key, fmt.Sprintf("%d", t), nil)
 		// TODO: log the error
