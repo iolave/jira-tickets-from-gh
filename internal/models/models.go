@@ -2,6 +2,7 @@ package models
 
 import (
 	"database/sql"
+	"os"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -18,6 +19,10 @@ func (m *Models) Close() error {
 
 func Initialize() (*Models, error) {
 	models := new(Models)
+
+	if err := os.MkdirAll("./data", os.ModePerm); err != nil {
+		return nil, err
+	}
 
 	db, err := sql.Open("sqlite3", "./data/storage.db")
 	if err != nil {
