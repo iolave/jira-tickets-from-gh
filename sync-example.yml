@@ -1,0 +1,21 @@
+sleepTime: 12ms
+enableApi: true
+sync:
+  - name: my-app 
+    assignees:
+      - jiraEmail: email@example.com
+        ghUser: iolave
+    github:
+      projectId: someid
+    jira:
+      subdomain: myorg
+      projectKey: MCA
+      estimateField: custom_field_1003
+      issuePrefix: "[BACK]"
+      issues:
+        - type: TechDebt
+          transitionsToWip: [1,2,3]
+          transitionsToDone: [4,5,6]
+        - type: Task
+          transitionsToWip: [1,2,3]
+          transitionsToDone: [4,5,6]

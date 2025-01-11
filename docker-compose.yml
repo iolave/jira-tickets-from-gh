@@ -1,5 +1,7 @@
 services:
   jira-tickets-from-gh:
+    volumes:
+      - data:/home/app/data
     build:
       context: .
       dockerfile: ./Dockerfile
@@ -19,21 +21,25 @@ services:
           cpus: '0.5'
           memory: 256M
     environment:
-      GH_TOKEN: /run/secrets/github_token
-      GH_PROJECT_ID: ${GH_PROJECT_ID}
-      GH_USERS_MAP: ${GH_USERS_MAP}
+      GITHUB_TOKEN: /run/secrets/github_token
+      JIRA_EMAIL: ${JIRA_EMAIL}
       JIRA_TOKEN: /run/secrets/jira_token
-      JIRA_SUBDOMAIN: ${JIRA_SUBDOMAIN}
-      JIRA_PROJECT_KEY: ${JIRA_PROJECT_KEY}
-      JIRA_WIP_TRANSITIONS: ${JIRA_WIP_TRANSITIONS}
-      JIRA_DONE_TRANSITIONS: ${JIRA_DONE_TRANSITIONS}
-      SLEEP_TIME: ${SLEEP_TIME}
+      # Modify this and/or add more jira_token_{{project_name}}
+      # secrets for multiple jira subdomains support
+      # JIRA_TOKEN_{{project_name}}: /run/secrets/jira_token_{{project_name}}
+      # JIRA_EMAIL_{{project_name}}: ${JIRA_EMAIL_{{project_name}}}
+      VERBOSE: ${VERBOSE}
     secrets:
       - jira_token
       - github_token
 secrets:
   jira_token:
     environment: "JIRA_TOKEN"
+  # Modify this and/or add more jira_token_{{project_name}}
+  # secrets for multiple jira subdomains support
+  # jira_token_{{project_name}}:
+  #   environment: "JIRA_TOKEN_{{project_name}}"
   github_token:
     environment: "GITHUB_TOKEN"
-
+volumes:
+  data:
