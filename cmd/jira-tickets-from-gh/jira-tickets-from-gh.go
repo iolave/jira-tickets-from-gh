@@ -29,5 +29,5 @@ func main() {
 		os.Exit(1)
 	}
 
-	cli.DetectAndRunAction(args)
+	cli.DetectAndRunAction(args, p)
 }

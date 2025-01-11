@@ -1,7 +1,7 @@
 services:
   jira-tickets-from-gh:
     volumes:
-      - data:/home/bun/app/data
+      - data:/home/app/data
     build:
       context: .
       dockerfile: ./Dockerfile
@@ -27,6 +27,7 @@ services:
       # Modify this and/or add more jira_token_{{project_name}}
       # secrets for multiple jira subdomains support
       # JIRA_TOKEN_{{project_name}}: /run/secrets/jira_token_{{project_name}}
+      # JIRA_EMAIL_{{project_name}}: ${JIRA_EMAIL_{{project_name}}}
       VERBOSE: ${VERBOSE}
     secrets:
       - jira_token

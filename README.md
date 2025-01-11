@@ -8,7 +8,16 @@ I was forced by my job to use Jira to keep track of tasks, but I kept forgetting
 
 ## Installation
 ```bash
-bun install -g jira-tickets-from-gh
+# Latest
+go install github.com/iolave/jira-tickets-from-gh/cmd/jira-tickets-from-gh@latest
+
+# Beta
+go install github.com/iolave/jira-tickets-from-gh/cmd/jira-tickets-from-gh@beta
+
+# From source
+git clone https://github.com/iolave/jira-tickets-from-gh
+cd jira-tickets-from-gh
+go install cmd/jira-tickets-from-gh/jira-tickets-from-gh.go
 ```
 
 ## Pre-requisites for running the CLI
@@ -57,11 +66,11 @@ Use `jira-tickets-from-gh sync` command to sync a GitHub project with a Jira clo
 | Property                                    | Required | Description |
 |---------------------------------------------|:--------:|-------------|
 | `sleepTime`                                 |`false`	 | sleep time between executions (if not specified the program will run once) |
-| `enableApi`                                 |`false`	 | serves an api to interact with the projects storage and manage tasks manually (like moving a task to done) |
+| `enableApi`                                 |`false`	 | serves an api to interact with the projects storage and manage tasks manually (like moving a task to done, not implemented yet) |
 | `sync[].name`                               |`true`	 | tag to identify a sync project (characters allowed are `[a-zA-Z0-9_]`) |
 | `sync[].assignees[]`                        |`false`	 | map of GitHub users to Jira ones (email)  |
 | `sync[].assignees[].jiraEmail`	      |`true`	 | Jira email |
-| `sync[].assignees[].ghUer`    	      |`true`	 | GitHub user |
+| `sync[].assignees[].ghUser`    	      |`true`	 | GitHub user |
 | `sync[].github.projectId`		      |`true`	 | Github project ID |
 | `sync[].jira.subdomain`		      |`true`	 | Jira subdomain |
 | `sync[].jira.projectKey`		      |`true`	 | Jira project key (usually a the short name) |
@@ -81,51 +90,37 @@ export JIRA_EMAIL=email@org.com
 jira-tickets-from-gh sync --config ./config.yml
 ```
 
-*Passing tokens via the cli*
+*Passing tokens via the cli (might not work with multiple jira subdomain projects)*
 ```bash
-export GITHUB_TOKEN=token
-export JIRA_TOKEN=token
 jira-tickets-from-gh --gh-token=TOKEN --jira-token=TOKEN sync --config ./config.yml
 ```
 
 *Execution example*
 ```
-[2024-08-01 10:45:46][INFO]	syncCmd.action                          	creating jira issue                                         	{"title":"TEST: bun-jira-tickets-from-gh"}
+[2024-08-01 10:45:46][INFO]	syncCmd.action                          	creating jira issue                                         	{"title":"TEST: jira-tickets-from-gh"}
 [2024-08-01 10:45:47][INFO]	syncCmd.action                          	created issue                                               	{"url":"https://mfhnet.atlassian.net/browse/TEST3-112"}
 ```
 
 ## Running using Docker
 ### Environment variables
 <!-- TODO: Update this part of the docs -->
-| Env                   | Maps to option          |
-|-----------------------|-------------------------|
-| GITHUB_TOKEN          | `--gh-token` |
-| GH_PROJECT_ID         | `--gh-project-id` |
-| GH_USERS_MAP          | `--gh-assignees-map` |
-| JIRA_TOKEN            | `--jira-token` |
-| JIRA_SUBDOMAIN        | `--jira-subdomain` |
-| JIRA_PROJECT_KEY      | `--jira-project-key` |
-| JIRA_WIP_TRANSITIONS  | `--transitions-to-wip` |
-| JIRA_DONE_TRANSITIONS | `--transitions-to-done` |
-| JIRA_ISSUE_PREFIX	| `--jira-issue-prefix` |
-| JIRA_ESTIMATE_FIELD	| `--jira-estimate-field` |
-| SLEEP_TIME            | `--sleep-time` |
-| VERBOSE               | if value is set to `true` then `-v` option is mapped |
+| Env		                | Info          |
+|-------------------------------|---------------|
+| `GITHUB_TOKEN`		| |
+| `JIRA_EMAIL`			| |
+| `JIRA_EMAIL_{{project_name}}` | optional, requires to add the secret to the docker compose file. |
+| `JIRA_TOKEN`			| |
+| `JIRA_TOKEN_{{project_name}}` | optional, requires to add the secret to the docker compose file. |
+| `VERBOSE`			| if value is set to `true` then `-v` option is mapped. |
 
 ### Example env file
 <!-- TODO: Update this part of the docs -->
 ```
 GITHUB_TOKEN=TOKEN
-GH_PROJECT_ID=PROJECT_ID
-GH_USERS_MAP=GH_USER:JIRA_EMAIL
+JIRA_EMAIL=mail@example.com
 JIRA_TOKEN=TOKEN
-JIRA_SUBDOMAIN=SUBDOMAIN
-JIRA_PROJECT_KEY=TEST
-JIRA_WIP_TRANSITIONS=2
-JIRA_DONE_TRANSITIONS=3
-JIRA_ISSUE_PREFIX=[BACKEND]
-JIRA_ESTIMATE_FIELD=customfield_10016
-SLEEP_TIME=600000
+JIRA_EMAIL_my_project=mail@example.com
+JIRA_TOKEN_my_project=TOKEN
 VERBOSE=false
 ```
 

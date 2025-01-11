@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/alexflint/go-arg"
 	"github.com/sirupsen/logrus"
 )
 
@@ -38,7 +39,7 @@ func PrintVersion() {
 
 // DetectAndRunAction chooses the proper action to be executed
 // based in the given args.
-func DetectAndRunAction(args Cmd) {
+func DetectAndRunAction(args Cmd, parser *arg.Parser) {
 	if args.Version != nil && *args.Version == true {
 		fmt.Println(VERSION)
 		os.Exit(0)
@@ -49,9 +50,15 @@ func DetectAndRunAction(args Cmd) {
 		switch {
 		case args.Github.ListProject != nil:
 			GithubProjectListAction(args)
+		default:
+			parser.WriteHelp(os.Stderr)
+			os.Exit(1)
 		}
 	case args.Sync != nil:
 		SyncCmdAction(args)
+	default:
+		parser.WriteHelp(os.Stderr)
+		os.Exit(1)
 	}
 }
 
