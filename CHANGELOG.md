@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [unreleased]
+
+## [v0.4.0]
 ### Added
 - Config file support including all previous cli options with the following new features:
   - New `sync[].jira.estimateField` option that allow users to specify the jira issue field name that stores story points (estimate). 
@@ -45,7 +47,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sync command that creates Jira tickets from GitHub project cards.
 - GitHub utility to list organization projects in order to extract a project id.
 
-[unreleased]: https://github.com/iolave/bun-jira-tickets-from-gh/compare/v0.3.0...staging
-[v0.3.0]: https://github.com/iolave/bun-jira-tickets-from-gh/releases/tag/v0.3.0
-[v0.2.0]: https://github.com/iolave/bun-jira-tickets-from-gh/releases/tag/v0.2.0
-[v0.1.0]: https://github.com/iolave/bun-jira-tickets-from-gh/releases/tag/v0.1.0
+[unreleased]: https://github.com/iolave/jira-tickets-from-gh/compare/v0.4.0...staging
+[v0.4.0]: https://github.com/iolave/jira-tickets-from-gh/releases/tag/v0.4.0
+[v0.3.0]: https://github.com/iolave/jira-tickets-from-gh/releases/tag/v0.3.0
+[v0.2.0]: https://github.com/iolave/jira-tickets-from-gh/releases/tag/v0.2.0
+[v0.1.0]: https://github.com/iolave/jira-tickets-from-gh/releases/tag/v0.1.0
