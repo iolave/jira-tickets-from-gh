@@ -85,6 +85,7 @@ func SyncCmdAction(args Cmd) {
 }
 
 func syncProject(args Cmd, config Config, projPos int, m *models.Models, gh *github.GitHubClient, log *logrus.Logger) {
+	epics := []epic{}
 	projectCfg := config.Projects[projPos]
 	log.WithFields(logrus.Fields{"project": projectCfg.Name}).Debugln("syncing project")
 
@@ -111,7 +112,7 @@ func syncProject(args Cmd, config Config, projPos int, m *models.Models, gh *git
 		log.WithFields(logrus.Fields{"err": err, "project": projectCfg.Name}).Errorln("failed retrieving github project fields")
 		exitFromErr(err)
 	}
-	fieldsIds := struct{ JiraUrl, JiraIssueType, Title, Estimate, Status, Repo, Assignees string }{}
+	fieldsIds := struct{ JiraUrl, JiraIssueType, Title, Estimate, Status, Repo, Assignees, Epic string }{}
 	for _, v := range fieldsResult.Data.Node.Fields.Nodes {
 		switch v.Name {
 		case models.FIELD_NAME_JIRA_URL:
@@ -128,12 +129,63 @@ func syncProject(args Cmd, config Config, projPos int, m *models.Models, gh *git
 			fieldsIds.Assignees = v.ID
 		case models.FIELD_NAME_REPO:
 			fieldsIds.Repo = v.ID
+		case models.FIELD_NAME_EPIC:
+			epics, err = getProjectEpics(jc, projectCfg.Jira.ProjectKey)
+			if err != nil {
+				log.WithFields(logrus.Fields{
+					"error":   err,
+					"project": projectCfg.Name,
+				}).Errorln("failed to retrieve epics")
+			} else {
+				log.WithFields(logrus.Fields{
+					"epics":   epics,
+					"project": projectCfg.Name,
+				}).Debugln("got epics")
+				// TODO: update github field options
+			}
+			fieldsIds.Epic = v.ID
+
+			if v.Options == nil {
+				err = errors.New("Epic field is not of type select")
+				log.WithFields(logrus.Fields{
+					"error":   err.Error(),
+					"project": projectCfg.Name,
+				}).Errorln("invalid field type")
+				exitFromErr(err)
+			}
+
+			shouldUpdateOptions := false
+			opts := []string{}
+			for _, epic := range epics {
+				opts = append(opts, epic.Title)
+				found := false
+				for _, opt := range *v.Options {
+					if strings.TrimSpace(epic.Title) == strings.TrimSpace(opt.Name) {
+						found = true
+						break
+					}
+				}
+
+				if !found {
+					shouldUpdateOptions = true
+				}
+			}
+			if shouldUpdateOptions {
+				// TODO: Update github options
+				if _, err = gh.UpdateProjectFieldOptions(v.ID, opts); err != nil {
+					log.WithFields(logrus.Fields{
+						"error":   err.Error(),
+						"project": projectCfg.Name,
+					}).Errorln("unable to update Epic field")
+					exitFromErr(err)
+				}
+			}
 		}
 	}
 	v := reflect.ValueOf(fieldsIds)
 	for i := 0; i < v.NumField(); i++ {
 		if v.Field(i).String() == "" {
-			err := fmt.Errorf(`error: missing field in project "%s", make sure it have the following fields [%s, %s, %s, %s, %s, %s, %s]`,
+			err := fmt.Errorf(`error: missing field in project "%s", make sure it have the following fields [%s, %s, %s, %s, %s, %s, %s, %s]`,
 				projectCfg.Name,
 				models.FIELD_NAME_JIRA_URL,
 				models.FIELD_NAME_JIRA_ISSUE_TYPE,
@@ -142,11 +194,11 @@ func syncProject(args Cmd, config Config, projPos int, m *models.Models, gh *git
 				models.FIELD_NAME_STATUS,
 				models.FIELD_NAME_ASSIGNEES,
 				models.FIELD_NAME_REPO,
+				models.FIELD_NAME_EPIC,
 			)
 			log.WithFields(logrus.Fields{"err": err, "project": projectCfg.Name}).Errorln("some fields are not present in github project")
 			exitFromErr(err)
 		}
-
 	}
 	// TODO: maybe is not necesesary to store the project fields id as they can be accessed from variables
 	log.WithFields(logrus.Fields{"project": projectCfg.Name, "fields": fieldsIds}).Debugln("upserting project fields ids")
@@ -250,10 +302,23 @@ func syncProject(args Cmd, config Config, projPos int, m *models.Models, gh *git
 
 		log.WithFields(logrus.Fields{"project": projectCfg.Name}).Infoln("refreshing remote github issues")
 		remoteIssuesResult, _, err := gh.GetProjectItems(p.ID, getGHFields())
+		if err != nil {
+			log.WithFields(logrus.Fields{"err": err, "project": projectCfg.Name}).Errorln("refreshing remote github issues fields")
+			continue
+		}
+
 		var remoteIssues []models.RemoteIssue
 		remoteIssuesResult.UnmarshallItems(&remoteIssues)
 		remoteIssues = helpers.FilterSlice(remoteIssues, func(ri models.RemoteIssue) bool {
-			return ri.Status != nil && ri.JiraIssueType != nil
+			if ri.Status != nil && ri.JiraIssueType != nil {
+				return true
+			}
+			log.WithFields(logrus.Fields{
+				"project":   projectCfg.Name,
+				"status":    ri.Status.Name,
+				"issueType": ri.JiraIssueType.Name,
+			}).Infoln("github issue skipped cuz is not ready")
+			return false
 		})
 		remoteIssues = helpers.MapSlice(remoteIssues, func(ri models.RemoteIssue) models.RemoteIssue {
 			if ri.JiraUrl.Text != nil {
@@ -264,16 +329,19 @@ func syncProject(args Cmd, config Config, projPos int, m *models.Models, gh *git
 			}
 			return ri
 		})
-		if err != nil {
-			log.WithFields(logrus.Fields{"err": err, "project": projectCfg.Name}).Errorln("refreshing remote github issues fields")
-			continue
-		}
 
 		riWithoutUrl := helpers.FilterSlice(remoteIssues, func(ri models.RemoteIssue) bool {
+			if ri.JiraUrl.Text == nil {
+				log.WithFields(logrus.Fields{
+					"project": projectCfg.Name,
+					"title":   ri.Title.Text,
+				}).Debugln("github issue does not have url")
+			}
+
 			return ri.JiraUrl.Text == nil
 		})
 		for _, ri := range riWithoutUrl {
-			createJiraIssueFromGhIssueWithoutUrl(
+			err := createJiraIssueFromGhIssueWithoutUrl(
 				config,
 				projPos,
 				jc,
@@ -282,10 +350,24 @@ func syncProject(args Cmd, config Config, projPos int, m *models.Models, gh *git
 				*ri.ToIssue(p.ID),
 				assigneesMap,
 			)
+			if err != nil {
+				log.WithFields(logrus.Fields{
+					"error": err,
+					"title": ri.Title.Text,
+				}).Errorln("failed to create jira issue from gh issue without url")
+			}
 		}
 
 		log.WithFields(logrus.Fields{"project": projectCfg.Name}).Debugln("obtaining local issues diff")
 		riWithUrl := helpers.FilterSlice(remoteIssues, func(ri models.RemoteIssue) bool {
+			if ri.JiraUrl.Text != nil {
+				log.WithFields(logrus.Fields{
+					"project": projectCfg.Name,
+					"title":   ri.Title.Text,
+					"url":     ri.JiraUrl.Text,
+				}).Debugln("github issue have url")
+			}
+
 			return ri.JiraUrl.Text != nil
 		})
 		diffs, err := p.GetIssuesDiff(riWithUrl)
@@ -539,6 +621,7 @@ func getGHFields() []github.ProjectField {
 		{Type: github.PROJECT_FIELD_SINGLE_SELECT, FieldAlias: "jiraIssueType", FieldName: "Jira issue type"},
 		{Type: github.PROJECT_FIELD_TEXT, FieldAlias: "jiraUrl", FieldName: "Jira URL"},
 		{Type: github.PROJECT_FIELD_REPO, FieldAlias: "repository", FieldName: "Repository"},
+		{Type: github.PROJECT_FIELD_SINGLE_SELECT, FieldAlias: "epic", FieldName: "Epic"},
 	}
 }
 
@@ -610,7 +693,6 @@ func createJiraIssueFromGhIssueWithoutUrl(
 		return err
 	}
 
-	fmt.Println(config.Projects[projPos].Jira.Subdomain)
 	url := fmt.Sprintf("https://%s.atlassian.net/browse/%s", config.Projects[projPos].Jira.Subdomain, result.Key)
 
 	_, _, err = gh.UpdateProjectItemField(is.GitHubProjectID, is.GitHubID, p.Fields.JiraURL, github.PROJECT_FIELD_TEXT, url)
@@ -687,4 +769,27 @@ func transitionToDone(jc *jira.Client, key string, pos int, config Config, is mo
 		// TODO: log the error
 		fmt.Println(err)
 	}
+}
+
+type epic struct {
+	Key   string `json:"key"`
+	Title string `json:"title"`
+}
+
+func getProjectEpics(jc *jira.Client, key string) (epics []epic, err error) {
+	ctx := context.TODO()
+	query := fmt.Sprintf(`project = %s AND issuetype = "Epic"`, key)
+	res, _, err := jc.Issue.Search.Get(ctx, query, nil, nil, 0, 10000, "")
+	if err != nil {
+		return nil, err
+	}
+
+	for _, v := range res.Issues {
+		epics = append(epics, epic{
+			Key:   v.Key,
+			Title: v.Fields.Summary,
+		})
+	}
+
+	return epics, nil
 }

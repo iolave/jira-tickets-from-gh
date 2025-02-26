@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub issues that lack of status no longer creates Jira issues to prevent malformed Jira issues.
 - GitHub issues that lack of issue type no longer creates Jira issues to prevent malformed Jira issues.
 - Dockerfile now uses go implementation instead of bun's one. 
+- GitHub project is now expected to have an Epic field of type single select. 
 
 ### Fixed
 - GitHub task's estimate field now is reflected in Jira issues.

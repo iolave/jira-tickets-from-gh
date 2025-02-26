@@ -268,5 +268,36 @@ func (c *GitHubClient) UpdateProjectItemField(projectId, itemId, fieldId string,
 	err = getErrorFromErrors(result.Errors)
 
 	return result, res, err
+}
 
+type UpdateProjectFieldOptionsResult struct {
+	Errors *[]Error `json:"errors"`
+}
+
+func (c *GitHubClient) UpdateProjectFieldOptions(fieldId string, options []string) (res *http.Response, err error) {
+	var valueQuery = ""
+	for _, v := range options {
+		valueQuery = fmt.Sprintf(`%s, {name: "%s" description:"" color:GRAY}`, valueQuery, v)
+	}
+
+	query := fmt.Sprintf(`mutation UpdateProjectV2Field {
+		updateProjectV2Field(input: {
+			fieldId: "%s"
+			clientMutationId: "%s"
+			singleSelectOptions: [%s]
+		}) {
+			clientMutationId
+		}
+	}`, fieldId, uuid.NewString(), valueQuery)
+
+	result := UpdateProjectFieldOptionsResult{}
+	res, err = c.request(query, &result)
+	if err != nil {
+		return res, err
+	}
+	if result.Errors != nil {
+		err = getErrorFromErrors(result.Errors)
+	}
+
+	return res, err
 }

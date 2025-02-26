@@ -13,6 +13,7 @@ const (
 	FIELD_NAME_STATUS          string = "Status"
 	FIELD_NAME_ASSIGNEES       string = "Assignees"
 	FIELD_NAME_REPO            string = "Repository"
+	FIELD_NAME_EPIC            string = "Epic"
 )
 
 type Project struct {

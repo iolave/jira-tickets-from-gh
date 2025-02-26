@@ -30,6 +30,7 @@ Make sure you have a GitHub project with the following fields:
 - `Status`: `Todo`, `In Progress`, `Done` choice field.
 - `Estimate`: Number field.
 - `Repository`: Default field for repository info.
+- `Epic`: choice field with something (options will be replaced with project ones).
 
 ### Get a Jira cloud token
 To get a jira api token from your jira cloud account please refer to the [docs](https://support.atlassian.com/atlassian-account/docs/manage-api-tokens-for-your-atlassian-account/).
